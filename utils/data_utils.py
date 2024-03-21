@@ -40,7 +40,8 @@ MAX_TAGS = 16
 MAX_DEPTH = 5
 
 # Maximum length of expressions in the dataset
-MAX_EXPR_LEN = 62
+# For Halide dataset, we needed to explore deeper in expression trees, thus used 180 instead of the default value 62.
+MAX_EXPR_LEN = 180
 
 # Creates a template for the input representation
 def get_representation_template(program_dict, train_device="cpu"):
@@ -94,8 +95,8 @@ def get_representation_template(program_dict, train_device="cpu"):
                     l_code + "Tiled",
                     l_code + "TileFactor",
                     l_code + "Fused",
-                    l_code + "Shifted",
-                    l_code + "ShiftFactor",
+                    l_code + "Splited",
+                    l_code + "SplitFactor",
                 ]
             )
         
@@ -188,8 +189,8 @@ def get_representation_template(program_dict, train_device="cpu"):
                 l_code + "Fused",
                 l_code + "Unrolled",
                 l_code + "UnrollFactor",
-                l_code + "Shifted",
-                l_code + "ShiftFactor",
+                l_code + "Splited",
+                l_code + "SplitFactor",
             ]
         )
         
@@ -329,25 +330,27 @@ def get_schedule_representation(
             p_index = comps_placeholders_indices_dict[l_code + "Fused"]
             comps_repr[p_index[0]][p_index[1]] = fused
             
-            shifted = 0
-            shifting_factor = 0
-            if comp_schedule_dict['shiftings']:
-                for shifting in comp_schedule_dict['shiftings']: 
-                    if iterator_name.startswith(shifting[0]): # loof if the current loop is being shifted
-                        shifted=1
-                        shifting_factor = shifting[1]
+            splited = 0
+            spliting_factor = 0
+            if comp_schedule_dict['splitings']:
+                for spliting in comp_schedule_dict['splitings']: 
+                    if iterator_name.startswith(spliting[0]): # loof if the current loop is being splited
+                        splited=1
+                        spliting_factor = spliting[1]
                         break
-            p_index = comps_placeholders_indices_dict[l_code + "Shifted"]
-            comps_repr[p_index[0]][p_index[1]] = shifted
-            p_index = comps_placeholders_indices_dict[l_code + "ShiftFactor"]
-            comps_repr[p_index[0]][p_index[1]] = shifting_factor
+            p_index = comps_placeholders_indices_dict[l_code + "Splited"]
+            comps_repr[p_index[0]][p_index[1]] = splited
+            p_index = comps_placeholders_indices_dict[l_code + "SplitFactor"]
+            comps_repr[p_index[0]][p_index[1]] = spliting_factor
         # Check whether unrolling was applied and put the tags in their corresponding position in the computation representation
         unrolled = 0
         unroll_factor = 0
         if comp_schedule_dict["unrolling_factor"]:
+            unroll_info = comp_schedule_dict["unrolling_factor"].split(',')
+
             unrolled = 1
-            unroll_factor = int(comp_schedule_dict["unrolling_factor"])
-            
+            unroll_factor = int(unroll_info[1])
+
         p_index = comps_placeholders_indices_dict[c_code + "-Unrolled"]
         comps_repr[p_index[0]][p_index[1]] = unrolled
         
@@ -411,8 +414,8 @@ def get_schedule_representation(
         loop_schedules_dict[loop_name]["tile_factor"] = 0
         loop_schedules_dict[loop_name]["unrolled"] = 0
         loop_schedules_dict[loop_name]["unroll_factor"] = 0
-        loop_schedules_dict[loop_name]["shifted"] = 0
-        loop_schedules_dict[loop_name]["shift_factor"] = 0
+        loop_schedules_dict[loop_name]["splited"] = 0
+        loop_schedules_dict[loop_name]["split_factor"] = 0
         loop_schedules_dict[loop_name]["parallelized"] = 0
         loop_schedules_dict[loop_name]["fused"] = 0
 
@@ -445,23 +448,25 @@ def get_schedule_representation(
         # Check whether unrolling was applied 
         if comp_schedule_dict["unrolling_factor"]:
             
-            comp_innermost_loop = get_comp_iterators_from_tree_struct(schedule_json, comp_name)[-1]
-            loop_schedules_dict[comp_innermost_loop]["unrolled"] = 1
-            
+            unroll_info = comp_schedule_dict["unrolling_factor"].split(',')
+            unroll_factor = int(unroll_info[1])
+
+            unroll_loop = unroll_info[0]
+            loop_schedules_dict[unroll_loop]["unrolled"] = 1
+
             # Make sure this loop either hasn't yet been unrolled or has beeen unrolled by the same factor
-            assert (loop_schedules_dict[comp_innermost_loop]["unroll_factor"] == 0 or loop_schedules_dict[comp_innermost_loop]["unroll_factor"] == int(comp_schedule_dict["unrolling_factor"]))
-            
-            loop_schedules_dict[comp_innermost_loop]["unroll_factor"] = int(comp_schedule_dict["unrolling_factor"])
-            
+            assert (loop_schedules_dict[unroll_loop]["unroll_factor"] == 0 or loop_schedules_dict[unroll_loop]["unroll_factor"] == int(unroll_factor))
+            loop_schedules_dict[unroll_loop]["unroll_factor"] = int(unroll_factor)
+ 
         # Check whether parallelization was applied 
         if comp_schedule_dict["parallelized_dim"]:
             loop_schedules_dict[comp_schedule_dict["parallelized_dim"]]["parallelized"] = 1
         
         
-        if comp_schedule_dict['shiftings']:
-            for shifting in comp_schedule_dict['shiftings']: 
-                loop_schedules_dict[shifting[0]]["shifted"] = 1
-                loop_schedules_dict[shifting[0]]["shift_factor"] = shifting[1]
+        if comp_schedule_dict['splitings']:
+            for spliting in comp_schedule_dict['splitings']: 
+                loop_schedules_dict[spliting[0]]["splited"] = 1
+                loop_schedules_dict[spliting[0]]["split_factor"] = spliting[1]
         
     # Check whether fusion was applied 
     if "fusions" in schedule_json and schedule_json["fusions"]:
@@ -495,11 +500,11 @@ def get_schedule_representation(
             "unroll_factor"
         ]
         
-        p_index = loops_placeholders_indices_dict[l_code + "Shifted"]
-        loops_repr[p_index[0]][p_index[1]] = loop_schedules_dict[loop_name]["shifted"]
-        p_index = loops_placeholders_indices_dict[l_code + "ShiftFactor"]
+        p_index = loops_placeholders_indices_dict[l_code + "Splited"]
+        loops_repr[p_index[0]][p_index[1]] = loop_schedules_dict[loop_name]["splited"]
+        p_index = loops_placeholders_indices_dict[l_code + "SplitFactor"]
         loops_repr[p_index[0]][p_index[1]] = loop_schedules_dict[loop_name][
-            "shift_factor"
+            "split_factor"
         ]
         
         p_index = loops_placeholders_indices_dict[l_code + "Fused"]
@@ -525,9 +530,9 @@ def get_schedule_representation(
             p_index = loops_placeholders_indices_dict[l_code + "UnrollFactor"]
             loops_repr[p_index[0]][p_index[1]] = 0
             
-            p_index = loops_placeholders_indices_dict[l_code + "Shifted"]
+            p_index = loops_placeholders_indices_dict[l_code + "Splited"]
             loops_repr[p_index[0]][p_index[1]] = 0
-            p_index = loops_placeholders_indices_dict[l_code + "ShiftFactor"]
+            p_index = loops_placeholders_indices_dict[l_code + "SplitFactor"]
             loops_repr[p_index[0]][p_index[1]] = 0
             
             p_index = loops_placeholders_indices_dict[l_code + "Fused"]
@@ -1301,7 +1306,7 @@ def get_expr_repr(expr, comp_type):
             expr_vector = [0, 0, 1, 0, 0, 0, 0, 0]
         elif(expr == "div"):
             expr_vector = [0, 0, 0, 1, 0, 0, 0, 0]
-        elif(expr == "sqrt"):
+        elif(expr == "access"):
             expr_vector = [0, 0, 0, 0, 1, 0, 0, 0]
         elif(expr == "min"):
             expr_vector = [0, 0, 0, 0, 0, 1, 0, 0]
@@ -1311,12 +1316,14 @@ def get_expr_repr(expr, comp_type):
             expr_vector = [0, 0, 0, 0, 0, 0, 0, 1]
         
         comp_type_vector = []
-        if(comp_type == "int32"):
+        if(comp_type.startswith("int") or comp_type.startswith("uint") ):
             comp_type_vector = [1, 0, 0]
         elif(comp_type == "float32"):
             comp_type_vector = [0, 1, 0]
         elif(comp_type == "float64"):
             comp_type_vector = [0, 0, 1]
+        else:
+            comp_type_vector = [0, 0, 0]
             
         return expr_vector + comp_type_vector
     
@@ -1558,10 +1565,10 @@ def get_schedule_str(program_json, sched_json):
             dim_index = transf_loop_nest.index(schedule["parallelized_dim"])
             sched_str += "P(L" + str(dim_index) + ")"
             
-        if schedule["shiftings"]:    
-            for shifting in schedule['shiftings']: 
-                dim_index = transf_loop_nest.index(shifting[0])
-                sched_str += "Sh(L" + str(dim_index) + "," + str(shifting[1])+")"
+        if schedule["splitings"]:    
+            for spliting in schedule['splitings']: 
+                dim_index = transf_loop_nest.index(spliting[0])
+                sched_str += "Sh(L" + str(dim_index) + "," + str(spliting[1])+")"
                 
         if schedule["tiling"]:
             if schedule["tiling"]["tiling_depth"] == 2:
@@ -1629,7 +1636,8 @@ def get_schedule_str(program_json, sched_json):
         if schedule["unrolling_factor"]:
             dim_index = len(transf_loop_nest) - 1
             dim_name = transf_loop_nest[-1]
-            sched_str += "U(L" + str(dim_index) + "," + schedule["unrolling_factor"] + ")"
+            sched_str += "U(L" + str(dim_index) + "," + ")"
+
             transf_loop_nest[dim_index : dim_index + 1] = (
                 dim_name + "_Uouter",
                 dim_name + "_Uinner",
