@@ -2,7 +2,6 @@ import hydra
 import gc
 import shutil
 from hydra.core.config_store import ConfigStore
-from utils.config import *
 from utils.data_utils import *
 from utils.modeling import *
 from utils.train_utils import *
@@ -77,8 +76,8 @@ def generate_datasets(conf):
     train_ds, train_bl, train_indices, gpu_fitted_batches_index = load_pickled_repr(
         train_repr_pkl_output_folder,
         max_batch_size = conf.data_generation.batch_size,
-        store_device = conf.training.gpu,
-        train_device = conf.training.gpu
+        store_device = conf.training.training_gpu,
+        train_device = conf.training.training_gpu
     )
     
     
@@ -120,7 +119,7 @@ def generate_datasets(conf):
             torch.save(train_bl_2, train_bl_pickle_file)
 
 if __name__ == "__main__":
-    cs = ConfigStore.instance()
+    #cs = ConfigStore.instance()
     multiprocessing.set_start_method('spawn')
-    cs.store(name="experiment_config", node=RecursiveLSTMConfig)
+    #cs.store(name="experiment_config", node=RecursiveLSTMConfig)
     generate_datasets()

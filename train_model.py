@@ -22,7 +22,7 @@ def main(conf):
                         level = logging.DEBUG,
                         format = '%(asctime)s:%(levelname)s:  %(message)s')
     logging.info(f"Starting experiment {conf.experiment.name}")
-    train_device = torch.device(conf.training.gpu)
+    train_device = torch.device(conf.training.training_gpu)
     
     # Defining the model
     logging.info("Defining the model")
@@ -31,7 +31,7 @@ def main(conf):
         comp_embed_layer_sizes=list(conf.model.comp_embed_layer_sizes),
         drops=list(conf.model.drops),
         loops_tensor_size=8,
-        train_device=conf.training.gpu,
+        train_device=conf.training.training_gpu,
     )
     
     # Load model weights and continue training if specified  
@@ -97,7 +97,7 @@ def main(conf):
         num_epochs=conf.training.max_epochs,
         logger=logger,
         log_every=1,
-        train_device=conf.training.gpu,
+        train_device=conf.training.training_gpu,
     )
 
 
